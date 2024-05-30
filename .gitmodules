@@ -1,0 +1,3 @@
+[submodule "fs_msgs"]
+	path = fs_msgs
+	url = https://github.com/KTHFSDV/fs_msgs.git
