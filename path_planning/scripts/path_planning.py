@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# from fsd_path_planning.utils.math_utils import unit_2d_vector_from_angle, rotate
-# from fsd_path_planning.utils.cone_types import ConeTypes
-# from fsd_path_planning import PathPlanner, MissionTypes, ConeTypes
+from fsd_path_planning.utils.math_utils import unit_2d_vector_from_angle, rotate
+from fsd_path_planning.utils.cone_types import ConeTypes
+from fsd_path_planning import PathPlanner, MissionTypes, ConeTypes
 import rospy
 import numpy as np
 import timeit
@@ -15,7 +15,7 @@ from tf.transformations import quaternion_from_euler
 import threading
 # Rest of the code
 
-# planner = PathPlanner(MissionTypes.trackdrive)
+planner = PathPlanner(MissionTypes.trackdrive)
 
 
 class PathPlanner:
@@ -30,6 +30,7 @@ class PathPlanner:
             self.convert_path(None)
             
         self.original_path_pub = rospy.Publisher("/original_path", Path, queue_size=10)
+        self.generated_path_pub = rospy.Publisher("/generated_pub", Path, queue_size=10)
         rospy.Timer(rospy.Duration(1/2), self.convert_path)
         # rospy.Timer(rospy.Duration(1/2), self.generate_new_path)
         self.br = tf.TransformBroadcaster()
@@ -46,6 +47,9 @@ class PathPlanner:
     def generate_new_path(self):
         if self.car_x is not None:
             self.car_position = np.array([self.car_x, self.car_y])
+            x = np.cos(self.car_yaw)
+            y = np.sin(self.car_yaw)
+            self.car_direction = np.array([x, y])
 
         mask_is_left = np.ones(len(self.cones_left_raw), dtype=bool)
         mask_is_right = np.ones(len(self.cones_right_raw), dtype=bool)
@@ -74,7 +78,7 @@ class PathPlanner:
         cones_by_type[ConeTypes.UNKNOWN] = cones_unknown
 
         out = planner.calculate_path_in_global_frame(
-            cones_by_type, car_position, car_direction, return_intermediate_results=True
+            cones_by_type, self.car_position, self.car_direction, return_intermediate_results=True
         )
 
         (
@@ -120,10 +124,17 @@ class PathPlanner:
     def marker_callback(self, markers):
         self.markers = markers
         for marker in self.markers.markers:
+            position = np.array([marker.pose.position.x, marker.pose.position.y])
             if marker.color.b == 1.0:
-                np.append(self.cones_right_raw, ([marker.pose.position.x, marker.pose.position.y]))
+                if self.cones_right_raw.size == 0:  # Initialize if empty
+                    self.cones_right_raw = position
+                else:
+                    self.cones_right_raw = np.vstack((self.cones_right_raw, position))
             else:
-                np.append(self.cones_left_raw, ([marker.pose.position.x, marker.pose.position.y]))
+                if self.cones_left_raw.size == 0:  # Initialize if empty
+                    self.cones_left_raw = position
+                else:
+                    self.cones_left_raw = np.vstack((self.cones_left_raw, position))
 
     def odom_callback(self, odom):
         self.stamp = odom.header.stamp
