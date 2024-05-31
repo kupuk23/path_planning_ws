@@ -51,45 +51,45 @@ class PathPlanner:
             y = np.sin(self.car_yaw)
             self.car_direction = np.array([x, y])
 
-    #     mask_is_left = np.ones(len(self.cones_left_raw), dtype=bool)
-    #     mask_is_right = np.ones(len(self.cones_right_raw), dtype=bool)
+        mask_is_left = np.ones(len(self.cones_left_raw), dtype=bool)
+        mask_is_right = np.ones(len(self.cones_right_raw), dtype=bool)
 
-    #     cones_left_adjusted = self.cones_left_raw - self.car_position
-    #     cones_right_adjusted = self.cones_right_raw - self.car_position
+        cones_left_adjusted = self.cones_left_raw - self.car_position
+        cones_right_adjusted = self.cones_right_raw - self.car_position
 
-    #     mask_is_left[np.argsort(np.linalg.norm(cones_left_adjusted, axis=1))[5:]] = False
-    #     mask_is_right[np.argsort(np.linalg.norm(cones_right_adjusted, axis=1))[5:]] = False
+        mask_is_left[np.argsort(np.linalg.norm(cones_left_adjusted, axis=1))[5:]] = False
+        mask_is_right[np.argsort(np.linalg.norm(cones_right_adjusted, axis=1))[5:]] = False
 
-    #     cones_left = self.cones_left_raw[mask_is_left]
-    #     cones_right = self.cones_right_raw[mask_is_right]
-    #     cones_unknown = np.row_stack(
-    #         [self.cones_left_raw[~mask_is_left], self.cones_right_raw[~mask_is_right]]
-    #     )
+        cones_left = self.cones_left_raw[mask_is_left]
+        cones_right = self.cones_right_raw[mask_is_right]
+        cones_unknown = np.row_stack(
+            [self.cones_left_raw[~mask_is_left], self.cones_right_raw[~mask_is_right]]
+        )
 
-    #     blue_color = "#7CB9E8"
-    #     yellow_color = "gold"
+        blue_color = "#7CB9E8"
+        yellow_color = "gold"
 
-    #     for i, c in enumerate(ConeTypes):
-    #         print(c, f"= {i}")
+        for i, c in enumerate(ConeTypes):
+            print(c, f"= {i}")
 
-    #     cones_by_type = [np.zeros((0, 2)) for _ in range(5)]
-    #     cones_by_type[ConeTypes.LEFT] = cones_left
-    #     cones_by_type[ConeTypes.RIGHT] = cones_right
-    #     cones_by_type[ConeTypes.UNKNOWN] = cones_unknown
+        cones_by_type = [np.zeros((0, 2)) for _ in range(5)]
+        cones_by_type[ConeTypes.LEFT] = cones_left
+        cones_by_type[ConeTypes.RIGHT] = cones_right
+        cones_by_type[ConeTypes.UNKNOWN] = cones_unknown
 
         out = planner.calculate_path_in_global_frame(
             cones_by_type, self.car_position, self.car_direction, return_intermediate_results=True
         )
 
-    #     (
-    #         path,
-    #         sorted_left,
-    #         sorted_right,
-    #         left_cones_with_virtual,
-    #         right_cones_with_virtual,
-    #         left_to_right_match,
-    #         right_to_left_match,
-    #     ) = out
+        (
+            path,
+            sorted_left,
+            sorted_right,
+            left_cones_with_virtual,
+            right_cones_with_virtual,
+            left_to_right_match,
+            right_to_left_match,
+        ) = out
 
 
     def time_check(self):
