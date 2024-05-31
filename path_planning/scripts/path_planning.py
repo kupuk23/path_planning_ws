@@ -11,7 +11,7 @@ from nav_msgs.msg import Odometry, Path
 from fs_msgs.msg import PlannedPath
 from geometry_msgs.msg import PoseStamped, Point, Quaternion, Pose
 import tf
-from tf.transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
 import threading
 # Rest of the code
 
@@ -19,7 +19,7 @@ planner = PathPlanner(MissionTypes.trackdrive)
 
 
 class PathPlanner:
-    def _init_(self):
+    def __init__(self):
         rospy.init_node("path_planner", anonymous=True)
         rospy.Subscriber("/slam/output/odom", Odometry, self.odom_callback)
         rospy.Subscriber("/slam/output/markers_map", MarkerArray, self.marker_callback)
@@ -30,7 +30,8 @@ class PathPlanner:
             self.convert_path(None)
             
         self.original_path_pub = rospy.Publisher("/original_path", Path, queue_size=10)
-        self.generated_path_pub = rospy.Publisher("/generated_pub", Path, queue_size=10)
+        self.generated_path_pub = rospy.Publisher("/generated_path", Path, queue_size=10)
+        self.yaw_test = rospy.Publisher("/yaw_test", Float32, queue_size=10)
         rospy.Timer(rospy.Duration(1/2), self.convert_path)
         # rospy.Timer(rospy.Duration(1/2), self.generate_new_path)
         self.br = tf.TransformBroadcaster()
@@ -47,6 +48,7 @@ class PathPlanner:
     def generate_new_path(self):
         if self.car_x is not None:
             self.car_position = np.array([self.car_x, self.car_y])
+            inverse_yaw = -self.car_yaw
             x = np.cos(self.car_yaw)
             y = np.sin(self.car_yaw)
             self.car_direction = np.array([x, y])
@@ -69,8 +71,8 @@ class PathPlanner:
         blue_color = "#7CB9E8"
         yellow_color = "gold"
 
-        for i, c in enumerate(ConeTypes):
-            print(c, f"= {i}")
+        # for i, c in enumerate(ConeTypes):
+        #     print(c, f"= {i}")
 
         cones_by_type = [np.zeros((0, 2)) for _ in range(5)]
         cones_by_type[ConeTypes.LEFT] = cones_left
@@ -90,6 +92,18 @@ class PathPlanner:
             left_to_right_match,
             right_to_left_match,
         ) = out
+
+        generated_path = Path()
+        generated_path.header.frame_id = "odom"
+        generated_path.header.stamp = self.stamp
+        for x,y in zip(path[1], path[2]):
+            poseStamp = PoseStamped()
+            poseStamp.header.frame_id = "odom"
+            poseStamp.header.stamp = self.stamp
+            poseStamp.pose.position.x = x
+            poseStamp.pose.position.y = y
+            generated_path.poses.append(poseStamp)
+        self.generated_path_pub.publish(generated_path)
 
 
     def time_check(self):
@@ -113,7 +127,7 @@ class PathPlanner:
                 poseStamp.pose.position.y = y
                 converted_path.poses.append(poseStamp)
             self.original_path_pub.publish(converted_path)
-            # self.generate_new_path()
+            self.generate_new_path()
 
 
 
@@ -123,6 +137,8 @@ class PathPlanner:
 
     def marker_callback(self, markers):
         self.markers = markers
+        self.cones_right_raw = np.array([])
+        self.cones_left_raw = np.array([])
         for marker in self.markers.markers:
             position = np.array([marker.pose.position.x, marker.pose.position.y])
             if marker.color.b == 1.0:
@@ -140,13 +156,12 @@ class PathPlanner:
         self.stamp = odom.header.stamp
         self.car_x = odom.pose.pose.position.x
         self.car_y = odom.pose.pose.position.y
-        self.car_yaw = odom.pose.pose.orientation.z
-        self.car_quart = quaternion_from_euler(0, 0, self.car_yaw)
+        quart_angle = [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w]
+        self.car_yaw = euler_from_quaternion(quart_angle)[2]
 
-        self.br.sendTransform((self.car_x, self.car_y, 0),self.car_quart,self.stamp,"test","odom")
+        self.yaw_test.publish(self.car_yaw)
 
-
-if __name__ == "_main_":    
+if __name__ == "__main__":    
     try:
         node = PathPlanner()
         rospy.spin()
