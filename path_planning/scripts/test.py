@@ -32,6 +32,7 @@ class PathPlanner:
         self.original_path_pub = rospy.Publisher("/original_path", Path, queue_size=10)
         self.generated_path_pub = rospy.Publisher("/generated_path", Path, queue_size=10)
         self.generate_heading_pub = rospy.Publisher("/heading", Marker, queue_size=10)
+        self.generate_markers_pub = rospy.Publisher('/markers_generated', MarkerArray, queue_size=10)
         self.yaw_test = rospy.Publisher("/yaw_test", Float32, queue_size=10)
         rospy.Timer(rospy.Duration(1/2), self.convert_path)
         # rospy.Timer(rospy.Duration(1/2), self.generate_new_path)
@@ -63,7 +64,7 @@ class PathPlanner:
         cones_right = cones_right_raw[mask_is_right]
 
         cones_unknown = np.row_stack(
-            [cones_left[~mask_is_left], cones_right[~mask_is_right]]
+            [cones_left_raw[~mask_is_left], cones_right_raw[~mask_is_right]]
         )
 
         blue_color = "#7CB9E8"
@@ -94,12 +95,12 @@ class PathPlanner:
         generated_path = Path()
         generated_path.header.frame_id = "odom"
         generated_path.header.stamp = self.stamp
-        for x,y in zip(path[1], path[2]):
+        for pose in path:
             poseStamp = PoseStamped()
             poseStamp.header.frame_id = "odom"
             poseStamp.header.stamp = self.stamp
-            poseStamp.pose.position.x = x
-            poseStamp.pose.position.y = y
+            poseStamp.pose.position.x = pose[1]
+            poseStamp.pose.position.y = pose[2]
             generated_path.poses.append(poseStamp)
         self.generated_path_pub.publish(generated_path)
 
@@ -135,21 +136,23 @@ class PathPlanner:
     def marker_callback(self, markers):
         self.markers = markers
         marker_array = MarkerArray()
-
         self.cones_right_raw = np.array([])
         self.cones_left_raw = np.array([])
         for i,marker in enumerate(self.markers.markers):
             position = np.array([marker.pose.position.x, marker.pose.position.y])
             if marker.color.b == 1.0:
+                marker_array.markers.append(marker)
                 if self.cones_right_raw.size == 0:  # Initialize if empty
                     self.cones_right_raw = position
                 else:
                     self.cones_right_raw = np.vstack((self.cones_right_raw, position))
+                    
             else:
                 if self.cones_left_raw.size == 0:  # Initialize if empty
                     self.cones_left_raw = position
                 else:
                     self.cones_left_raw = np.vstack((self.cones_left_raw, position))
+        self.generate_markers_pub.publish(marker_array)
 
         
 
