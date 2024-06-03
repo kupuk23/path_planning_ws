@@ -48,12 +48,12 @@ class PathPlanner:
         self.stamp = None
         self.cones_right_raw = np.array([])
         self.cones_left_raw = np.array([])
-        self.false_p_right = MarkerArray()
+        self.false_cones = MarkerArray()
         self.false_p_left = MarkerArray()
         print("running")
 
 
-    def generate_new_path(self, car_pos, car_dir, cones_left_raw, cones_right_raw):
+    def generate_new_path(self, car_pos, car_dir,  cones_left_raw, cones_right_raw):
         if not cones_left_raw.size:
             return
         
@@ -65,6 +65,7 @@ class PathPlanner:
 
         mask_is_left[np.argsort(np.linalg.norm(cones_left_adjusted, axis=1))[5:]] = False
         mask_is_right[np.argsort(np.linalg.norm(cones_right_adjusted, axis=1))[5:]] = False
+
 
         path = self.run_path_planner(cones_left_raw, cones_right_raw, mask_is_left, mask_is_right, car_pos, car_dir)
 
@@ -79,9 +80,9 @@ class PathPlanner:
             poseStamp.pose.position.y = pose[2]
             generated_path.poses.append(poseStamp)
 
-        
+        false_cones = np.array([(marker.pose.position.x, marker.pose.position.y) for marker in self.false_cones.markers])
 
-        path = self.run_path_planner(cones_left_raw, cones_right_raw, mask_is_left, mask_is_right, car_pos, car_dir, uncolored=True)
+        path = self.run_path_planner(cones_left_raw, cones_right_raw, mask_is_left, mask_is_right, car_pos, car_dir, false_cones, uncolored=True)
         
         uncolored_path = Path()
         uncolored_path.header.frame_id = "odom"
@@ -98,21 +99,30 @@ class PathPlanner:
         self.generated_path_pub.publish(generated_path)
                 
 
-    def run_path_planner(self, cones_left_raw, cones_right_raw, mask_left, mask_right, car_pos, car_dir, uncolored = False):
+    def run_path_planner(self, cones_left_raw, cones_right_raw, mask_left, mask_right, car_pos, car_dir, false_cones= np.array([]), uncolored = False):
 
         if not uncolored:
             cones_left = cones_left_raw[mask_left]
             cones_right = cones_right_raw[mask_right]
+            if false_cones.size == 0:
+                cones_unknown = np.row_stack(
+                    [cones_left_raw[~mask_left], cones_right_raw[~mask_right]]
+                )
+            else:
+                cones_unknown = np.row_stack(
+                    [cones_left_raw[~mask_left], cones_right_raw[~mask_right], false_cones])
 
-            cones_unknown = np.row_stack(
-                [cones_left_raw[~mask_left], cones_right_raw[~mask_right]]
-            )
         
         else : 
             cones_left = np.array([])
             cones_right = np.array([])
-            cones_unknown = np.row_stack(
-                [cones_left_raw, cones_right_raw]
+            if false_cones.size == 0:
+                cones_unknown = np.row_stack(
+                    [cones_left_raw, cones_right_raw]
+                )
+            else:
+                cones_unknown = np.row_stack(
+                [cones_left_raw, cones_right_raw, false_cones]
             )
         
 
@@ -159,6 +169,8 @@ class PathPlanner:
                 poseStamp.pose.position.y = y
                 converted_path.poses.append(poseStamp)
             self.original_path_pub.publish(converted_path)
+            self.create_false_cones(self.markers.markers)
+            
 
 
 
@@ -183,36 +195,39 @@ class PathPlanner:
                     self.cones_left_raw = position
                 else:
                     self.cones_left_raw = np.vstack((self.cones_left_raw, position))
-        self.create_false_cones(self.markers.markers)
-        false_cones = MarkerArray()
-        false_cones.markers.extend(self.false_p_left.markers)
-        false_cones.markers.extend(self.false_p_right.markers)
-        self.false_cones_pub.publish(false_cones)
+        
+        self.false_cones_pub.publish(self.false_cones)
         
 
-    def create_false_cones(self, cones):
+    def create_false_cones(self, cones, generate_radius=4):
         r = cones[0].scale.x
-        if random.random() < 0.2:
+        if random.random() < 0.1:
             # Generate a random radius between 1.2r and 1.5r
-            random_radius = random.uniform(1.2 * r, 1.5 * r)
+            random_radius = random.uniform(1.4 * r, 2.0 * r)
 
             # Generate a random angle between 0 and 2π
             random_angle = random.uniform(0, 2 * math.pi)
+            potential_cones = []
+            #iterate through the cones, find the cones inside the car radiusx   
+            for cone in cones:
+                cone_pos = np.array([cone.pose.position.x, cone.pose.position.y])
+                car_pos = np.array([self.car_x, self.car_y])
+                if math.dist(cone_pos, car_pos) < generate_radius:
+                    potential_cones.append(cone)
 
-            cone = random.choice(cones)
-            #TODO: CHOOSE THE CONES INSIDE THE CAR RADIUS
-            
-            new_cone = deepcopy(cone)
-            # Convert polar coordinates to Cartesian coordinates
-            new_x = cone.pose.position.x + random_radius * math.cos(random_angle)
-            new_y = cone.pose.position.y + random_radius * math.sin(random_angle)   
-            new_cone.pose.position.x = new_x
-            new_cone.pose.position.y = new_y
-            
-            if new_cone.color.b == 1.0:
-                self.false_p_left.markers.append(new_cone)
-            else:
-                self.false_p_right.markers.append(new_cone)      
+                    
+            if potential_cones != []:
+                new_cone = deepcopy(random.choice(potential_cones))
+                # Convert polar coordinates to Cartesian coordinates
+                new_x = cone.pose.position.x + random_radius * math.cos(random_angle)
+                new_y = cone.pose.position.y + random_radius * math.sin(random_angle)   
+                new_cone.pose.position.x = new_x
+                new_cone.pose.position.y = new_y
+                new_cone.color.a = 1.0
+                new_cone.color.r = 1.0
+                new_cone.color.g = 1.0
+                new_cone.color.b = 1.0
+                self.false_cones.markers.append(new_cone)      
 
     def odom_callback(self, odom):
         
