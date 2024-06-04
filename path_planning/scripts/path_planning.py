@@ -30,8 +30,6 @@ class PathPlanner:
         rospy.Subscriber( "/navigation/speed_profiler/path", PlannedPath, self.curr_path_callback)
         # self.pub = rospy.Publisher('/kthfs/result', Float32, queue_size=10)
 
-        def wrapper():
-            self.convert_path(None)
             
         self.original_path_pub = rospy.Publisher("/original_path", Path, queue_size=10)
         self.generated_path_pub = rospy.Publisher("/generated_path", Path, queue_size=10)
@@ -53,7 +51,7 @@ class PathPlanner:
         print("running")
 
 
-    def generate_new_path(self, car_pos, car_dir,  cones_left_raw, cones_right_raw):
+    def generate_new_path(self, car_pos, car_dir,  cones_left_raw, cones_right_raw, both_cones = True):
         if not cones_left_raw.size:
             return
         
@@ -65,6 +63,8 @@ class PathPlanner:
 
         mask_is_left[np.argsort(np.linalg.norm(cones_left_adjusted, axis=1))[5:]] = False
         mask_is_right[np.argsort(np.linalg.norm(cones_right_adjusted, axis=1))[5:]] = False
+
+       
 
 
         path = self.run_path_planner(cones_left_raw, cones_right_raw, mask_is_left, mask_is_right, car_pos, car_dir)
@@ -80,9 +80,17 @@ class PathPlanner:
             poseStamp.pose.position.y = pose[2]
             generated_path.poses.append(poseStamp)
 
+
+        if not both_cones:
+            cones_right_raw = np.array([])
+            mask_is_left = np.ones(len(cones_left_raw), dtype=bool)
+            cones_left_adjusted = cones_left_raw - car_pos
+            mask_is_left[np.argsort(np.linalg.norm(cones_left_adjusted, axis=1))[5:]] = False
+            mask_is_right = np.zeros(len(cones_right_raw), dtype=bool)
+
         false_cones = np.array([(marker.pose.position.x, marker.pose.position.y) for marker in self.false_cones.markers])
 
-        path = self.run_path_planner(cones_left_raw, cones_right_raw, mask_is_left, mask_is_right, car_pos, car_dir, false_cones, uncolored=True)
+        path = self.run_path_planner(cones_left_raw, cones_right_raw, mask_is_left, mask_is_right, car_pos, car_dir, false_cones, uncolored=False, both_cones=both_cones)
         
         uncolored_path = Path()
         uncolored_path.header.frame_id = "odom"
@@ -97,33 +105,33 @@ class PathPlanner:
 
         self.uncolored_path_pub.publish(uncolored_path)
         self.generated_path_pub.publish(generated_path)
-                
+        
 
-    def run_path_planner(self, cones_left_raw, cones_right_raw, mask_left, mask_right, car_pos, car_dir, false_cones= np.array([]), uncolored = False):
+    def run_path_planner(self, cones_left_raw, cones_right_raw, mask_left, mask_right, car_pos, car_dir, false_cones= np.array([]), uncolored = False, both_cones = True):
 
         if not uncolored:
             cones_left = cones_left_raw[mask_left]
-            cones_right = cones_right_raw[mask_right]
+            cones_right = cones_right_raw[mask_right] if both_cones else np.array([])
+            
             if false_cones.size == 0:
                 cones_unknown = np.row_stack(
                     [cones_left_raw[~mask_left], cones_right_raw[~mask_right]]
-                )
+                ) if both_cones else cones_left_raw[~mask_left]
             else:
                 cones_unknown = np.row_stack(
-                    [cones_left_raw[~mask_left], cones_right_raw[~mask_right], false_cones])
+                    [cones_left_raw[~mask_left], cones_right_raw[~mask_right], false_cones]) if both_cones else np.row_stack([cones_left_raw[~mask_left], false_cones])
 
-        
         else : 
             cones_left = np.array([])
             cones_right = np.array([])
             if false_cones.size == 0:
                 cones_unknown = np.row_stack(
                     [cones_left_raw, cones_right_raw]
-                )
+                ) if both_cones else cones_left_raw
             else:
                 cones_unknown = np.row_stack(
                 [cones_left_raw, cones_right_raw, false_cones]
-            )
+            ) if both_cones else np.row_stack([cones_left_raw, false_cones])
         
 
 
@@ -239,7 +247,7 @@ class PathPlanner:
         self.generate_marker(odom)
         self.car_position = np.array([self.car_x, self.car_y])
         self.car_direction = unit_2d_vector_from_angle(self.car_yaw)
-        self.generate_new_path(self.car_position, self.car_direction, self.cones_left_raw, self.cones_right_raw)
+        self.generate_new_path(self.car_position, self.car_direction, self.cones_left_raw, self.cones_right_raw, both_cones=False)
         
     def generate_marker(self, odom):
         heading = Marker()
