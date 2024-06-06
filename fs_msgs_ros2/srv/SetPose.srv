@@ -1,0 +1,7 @@
+#
+# Service to set the pose of a module
+#
+
+geometry_msgs/PoseWithCovarianceStamped pose
+
+---
